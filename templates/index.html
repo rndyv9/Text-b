@@ -1,0 +1,94 @@
+<!doctype html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Text Battle</title>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 1rem; }
+    .card { border: 1px solid #ddd; border-radius: 14px; padding: 1rem; margin-bottom: 1rem; }
+    .row { display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; }
+    button { padding: .6rem .9rem; border-radius: 10px; border: 1px solid #ccc; background: #f7f7f7; }
+    .log { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .hp { font-weight: 700; }
+    .tag { font-size: .85rem; background: #eef; padding: .2rem .5rem; border-radius: 999px; }
+    input { padding: .5rem .6rem; border-radius: 10px; border: 1px solid #ccc; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>Start Battle</h2>
+    <div class="row">
+      <input id="playerName" placeholder="Name" />
+      <div id="traitArea" class="row"></div>
+      <button onclick="startBattle()">Start</button>
+    </div>
+  </div>
+
+  <div id="battle" class="card" style="display:none">
+    <div id="status"></div>
+    <div class="row">
+      <button id="attackBtn" onclick="doTurn()">Attack</button>
+      <button onclick="resetBattle()">Reset</button>
+    </div>
+    <div id="log" class="log"></div>
+  </div>
+
+<script>
+let battleId = null;
+let battle = null;
+
+async function loadTraits(){
+  const res = await fetch('/traits');
+  const traits = await res.json();
+  const area = document.getElementById('traitArea');
+  traits.forEach(t => {
+    const label = document.createElement('label');
+    label.className = 'tag';
+    label.innerHTML = `<input type="checkbox" value="${t.key}" /> ${t.name}`;
+    area.appendChild(label);
+  });
+}
+loadTraits();
+
+function renderStatus(b){
+  const s = document.getElementById('status');
+  const p = b.player; const e = b.enemy;
+  s.innerHTML = `
+    <h3>${p.name} vs ${e.name}</h3>
+    <div>Player HP: <span class="hp">${b.player_hp}</span> | Enemy HP: <span class="hp">${b.enemy_hp}</span></div>
+    ${b.finished ? `<div><b>Winner:</b> ${b.winner}</div>` : ''}
+  `;
+  const l = document.getElementById('log');
+  l.innerHTML = b.log.map(x => {
+    const who = x.attacker === 'player' ? p.name : e.name;
+    const crit = x.crit ? ' (CRIT!)' : '';
+    return `${who} hits ${x.defender} for ${x.dmg}${crit}. ${x.defender} HP -> ${x.defender_hp_after}`;
+  }).join('\n');
+  document.getElementById('attackBtn').disabled = b.finished;
+}
+
+async function startBattle(){
+  const name = document.getElementById('playerName').value || 'Player';
+  const traitKeys = Array.from(document.querySelectorAll('#traitArea input:checked')).map(i => i.value);
+  const res = await fetch('/start', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name, traits: traitKeys})});
+  battle = await res.json();
+  battleId = battle.battle_id;
+  document.getElementById('battle').style.display = 'block';
+  renderStatus(battle);
+}
+
+async function doTurn(){
+  const res = await fetch(`/turn/${battleId}`, {method:'POST'});
+  battle = await res.json();
+  renderStatus(battle);
+}
+
+async function resetBattle(){
+  await fetch(`/reset/${battleId}`, {method:'POST'});
+  battleId = null; battle = null;
+  document.getElementById('battle').style.display = 'none';
+}
+</script>
+</body>
+</html>
